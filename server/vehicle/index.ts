@@ -12,16 +12,16 @@ if (DEBUG) import('./parser');
 
 type Vec3 = number[] | { x: number; y: number; z: number } | { buffer: any };
 
+export interface CreateVehicleData {
+  model: string;
+  owner?: number;
+  group?: string;
+  stored?: string;
+  properties?: VehicleProperties;
+}
+
 export async function CreateVehicle(
-  data:
-    | string
-    | (Partial<VehicleRow> & {
-        model: string;
-        owner?: number;
-        group?: string;
-        stored?: string;
-        properties?: VehicleProperties;
-      }),
+  data: string | (CreateVehicleData & Partial<VehicleRow>),
   coords?: Vec3,
   heading?: number,
   invokingScript = GetInvokingResource()
@@ -56,10 +56,14 @@ export async function CreateVehicle(
   if (data.vin && !data.owner && !data.group) delete data.vin;
 
   data.plate =
-    data.plate && (!data.id || (await IsPlateAvailable(data.plate))) ? data.plate : await OxVehicle.generatePlate();
+    data.vin && data.plate
+      ? data.plate
+      : data.plate && (await IsPlateAvailable(data.plate))
+        ? data.plate
+        : await OxVehicle.generatePlate();
 
-  const metadata = data.data || ({} as { properties: VehicleProperties; [key: string]: any });
-  metadata.properties = metadata.properties || data.properties;
+  const metadata = data.data || {};
+  const properties = data.properties || {} as VehicleProperties;
 
   if (!data.id && data.vin) {
     data.id = await CreateNewVehicle(
@@ -84,6 +88,7 @@ export async function CreateVehicle(
     vehicleData.make,
     data.stored || null,
     metadata,
+    properties,
     data.id,
     data.vin,
     data.owner,
@@ -92,7 +97,7 @@ export async function CreateVehicle(
 
   const state = vehicle.getState();
 
-  state.set('initVehicle', true, true)
+  state.set('initVehicle', true, true);
 
   return vehicle;
 }
@@ -102,8 +107,6 @@ export async function SpawnVehicle(id: number, coords: Vec3, heading?: number) {
   const vehicle = await GetStoredVehicleFromId(id);
 
   if (!vehicle) return;
-
-  vehicle.data = JSON.parse(vehicle.data as any);
 
   return await CreateVehicle(vehicle, coords, heading, invokingScript);
 }

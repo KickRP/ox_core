@@ -1,98 +1,57 @@
-import esbuild from 'esbuild';
-import { readFile, readFileSync, writeFileSync } from 'fs';
+//@ts-check
 
-/** @type {import('esbuild').BuildOptions} */
-const server = {
-  platform: 'node',
-  target: ['node16'],
-  format: 'cjs',
-};
+import { createBuilder, createFxmanifest } from '@overextended/fx-utils';
+import { spawn } from 'child_process';
 
-/** @type {import('esbuild').BuildOptions} */
-const client = {
-  platform: 'browser',
-  target: ['es2021'],
-  format: 'iife',
-};
+const watch = process.argv.includes('--watch');
 
-const production = process.argv.includes('--mode=production');
-const buildCmd = production ? esbuild.build : esbuild.context;
-const wordWrap = new RegExp(`.{1,65}\\s+|\\S+`, 'g');
-const packageJson = JSON.parse(readFileSync('package.json', { encoding: 'utf8' }));
-const copyright = readFileSync('README.md', { encoding: 'utf8' })
-  .replace(/[\s\S]*?## Copyright/, '')
-  .match(wordWrap)
-  .join('\n  * ')
-  .replace(/\n{2,}/g, '\n');
+function exec(command) {
+  return new Promise((resolve) => {
+    const child = spawn(command, { stdio: 'inherit', shell: true });
 
-console.log(copyright.split('\n')[0]);
-
-writeFileSync(
-  '.yarn.installed',
-  new Date().toLocaleString('en-AU', { timeZone: 'UTC', timeStyle: 'long', dateStyle: 'full' })
-);
-
-writeFileSync(
-  'fxmanifest.lua',
-  `fx_version 'cerulean'
-game 'gta5'
-
-name '${packageJson.name}'
-author '${packageJson.author}'
-version '${packageJson.version}'
-license '${packageJson.license}'
-repository '${packageJson.repository.url}'
-description '${packageJson.description}'
-
-dependencies {
-    '/server:7290',
-    '/onesync',
+    child.on('exit', (code) => {
+      resolve(code === 0);
+    });
+  });
 }
 
-files {
-    'lib/init.lua',
-    'lib/client/**.lua',
-    'imports/client.lua',
-    'locales/*.json',
-    'common/data/*.json',
+if (!watch) {
+  const tsc = await exec(`tsc --build ${watch ? '--watch --preserveWatchOutput' : ''} && tsc-alias`);
+
+  if (!tsc) process.exit(0);
 }
 
-client_script 'dist/client.js'
-server_script 'dist/server.js'
-
-`
-);
-
-for (const context of ['client', 'server']) {
-  buildCmd({
-    bundle: true,
-    entryPoints: [`${context}/index.ts`],
-    outfile: `dist/${context}.js`,
-    keepNames: true,
-    dropLabels: production ? ['DEV'] : undefined,
-    legalComments: 'inline',
-    banner: {
-      js: `/**\n  * ${copyright}  */`,
+createBuilder(
+  watch,
+  {
+    dropLabels: !watch ? ['DEV'] : undefined,
+  },
+  [
+    {
+      name: 'server',
+      options: {
+        platform: 'node',
+        target: ['node16'],
+        format: 'cjs',
+        entryPoints: [`./server/index.ts`],
+      },
     },
-    plugins: production
-      ? undefined
-      : [
-          {
-            name: 'rebuild',
-            setup(build) {
-              const cb = (result) => {
-                if (!result || result.errors.length === 0) console.log(`Successfully built ${context}`);
-              };
-              build.onEnd(cb);
-            },
-          },
-        ],
-    ...(context === 'client' ? client : server),
-  })
-    .then((build) => {
-      if (production) return console.log(`Successfully built ${context}`);
-
-      build.watch();
-    })
-    .catch(() => process.exit(1));
-}
+    {
+      name: 'client',
+      options: {
+        platform: 'browser',
+        target: ['es2021'],
+        format: 'iife',
+        entryPoints: [`./client/index.ts`],
+      },
+    },
+  ],
+  async (files) => {
+    await createFxmanifest({
+      client_scripts: [files.client],
+      server_scripts: [files.server],
+      files: ['lib/init.lua', 'lib/client/**.lua', 'locales/*.json', 'common/data/*.json'],
+      dependencies: ['/server:7290', '/onesync'],
+    });
+  }
+);

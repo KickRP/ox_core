@@ -6,8 +6,7 @@ import { Statuses } from './status';
 import { CreateNewAccount } from 'accounts/db';
 import { Dict, NewCharacter, OxStatus } from 'types';
 import { CREATE_DEFAULT_ACCOUNT } from 'config';
-
-type ScopeEvent = { player: string; for: string };
+import './license';
 
 const playerLoadEvents: Dict<Function> = {};
 const playerLogoutEvents: Function[] = [];
@@ -80,20 +79,6 @@ on('onResourceStop', (resource: string) => {
   }
 });
 
-on('playerEnteredScope', (data: ScopeEvent) => {
-  DEV: console.info(`Player ${data.for} entered the scope of Player ${data.player}`);
-  const player = OxPlayer.get(data.for);
-
-  if (player) player.getPlayersInScope()[data.player] = true;
-});
-
-on('playerLeftScope', (data: ScopeEvent) => {
-  DEV: console.info(`Player ${data.for} left the scope of Player ${data.player}`);
-  const player = OxPlayer.get(data.for);
-
-  if (player) delete player.getPlayersInScope()[data.player];
-});
-
 onNet('ox:setActiveCharacter', async (data: number | NewCharacter) => {
   const player = OxPlayer.get(source);
 
@@ -113,8 +98,7 @@ onClientCallback('ox:deleteCharacter', async (playerId, charId: number) => {
 on('ox:createdCharacter', async (playerId: number, userId: number, charId: number) => {
   db.execute('INSERT INTO character_inventory (charId) VALUES (?)', [charId]);
 
-  if (CREATE_DEFAULT_ACCOUNT)
-    CreateNewAccount('owner', charId, 'Personal', false, true);
+  if (CREATE_DEFAULT_ACCOUNT) CreateNewAccount(charId, 'Personal', true);
 });
 
 onNet('ox:updateStatuses', async (data: Dict<OxStatus>) => {
@@ -138,4 +122,10 @@ onClientCallback('ox:setActiveGroup', (playerId, groupName: string) => {
   if (!player) return false;
 
   return player.setActiveGroup(groupName);
+});
+
+onClientCallback('ox:getLicense', (playerId, licenseName: string, target?: number) => {
+  const player = OxPlayer.get(target || playerId);
+
+  if (player) return licenseName ? player.getLicense(licenseName) : player.getLicenses();
 });

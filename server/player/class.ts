@@ -23,20 +23,10 @@ import {
   UpdateCharacterGroup,
   SetActiveGroup,
 } from 'groups/db';
-import { GetAccountRole, GetCharacterAccount, GetCharacterAccounts } from 'accounts';
-import type {
-  Character,
-  Dict,
-  NewCharacter,
-  PlayerMetadata,
-  OxGroup,
-  CharacterLicense,
-  OxAccountPermissions,
-} from 'types';
+import { PayAccountInvoice } from 'accounts';
+import type { Character, Dict, NewCharacter, PlayerMetadata, OxGroup, CharacterLicense } from 'types';
 import { GetGroupPermissions } from '../../common';
-import { CanPerformAction } from 'accounts/roles';
-
-export type PlayerInstance = InstanceType<typeof OxPlayer>;
+import { Licenses } from './license';
 
 export class OxPlayer extends ClassInterface {
   source: number | string;
@@ -47,14 +37,13 @@ export class OxPlayer extends ClassInterface {
   identifier: string;
   ped: number;
   #characters: Character[];
-  #inScope: Dict<true> = {};
   #metadata: Dict<any>;
   #statuses: Dict<number>;
   #groups: Dict<number>;
   #licenses: Dict<CharacterLicense>;
 
-  protected static members: Dict<PlayerInstance> = {};
-  protected static keys: Dict<Dict<PlayerInstance>> = {
+  protected static members: Dict<OxPlayer> = {};
+  protected static keys: Dict<Dict<OxPlayer>> = {
     userId: {},
     charId: {},
   };
@@ -67,6 +56,11 @@ export class OxPlayer extends ClassInterface {
   /** Get an instance of OxPlayer with the matching userId. */
   static getFromUserId(id: number) {
     return this.keys.userId[id];
+  }
+
+  /** Get an instance of OxPlayer with the matching charId. */
+  static getFromCharId(id: number) {
+    return this.keys.charId[id];
   }
 
   /** Compares player fields and metadata to a filter, returning the player if all values match. */
@@ -93,12 +87,12 @@ export class OxPlayer extends ClassInterface {
   }
 
   /** Gets all instances of OxPlayer, optionally comparing against a filter. */
-  static getAll(filter?: Dict<any>, asArray?: false): Dict<PlayerInstance>;
-  static getAll(filter?: Dict<any>, asArray?: true): PlayerInstance[];
-  static getAll(filter?: Dict<any>, asArray = false): Dict<PlayerInstance> | PlayerInstance[] {
+  static getAll(filter?: Dict<any>, asArray?: false): Dict<OxPlayer>;
+  static getAll(filter?: Dict<any>, asArray?: true): OxPlayer[];
+  static getAll(filter?: Dict<any>, asArray = false): Dict<OxPlayer> | OxPlayer[] {
     if (!filter) return asArray ? Object.values(this.members) : this.members;
 
-    const obj: Dict<PlayerInstance> = {};
+    const obj: Dict<OxPlayer> = {};
 
     for (const id in this.members) {
       const player = this.members[id].filter(filter);
@@ -137,7 +131,6 @@ export class OxPlayer extends ClassInterface {
     super();
     this.source = source;
     this.#characters = [];
-    this.#inScope = {};
     this.#metadata = {};
     this.#statuses = {};
     this.#groups = {};
@@ -166,47 +159,21 @@ export class OxPlayer extends ClassInterface {
     return this.#metadata[key];
   }
 
-  /** Returns an object of all player id's in range of the player. */
-  getPlayersInScope() {
-    return this.#inScope;
-  }
-
-  /** Returns true if the target player id is in range of the player. */
-  isPlayerInScope(targetId: number) {
-    return targetId in this.#inScope;
-  }
-
-  /** Triggers an event on all players within range of the player. */
-  triggerScopedEvent(eventName: string, ...args: any[]) {
-    for (const id in this.#inScope) {
-      emitNet(eventName, id, ...args);
-    }
-  }
-
-  /** Returns the default account for the active character. */
-  getAccount() {
+  async payInvoice(invoiceId: number) {
     if (!this.charId) return;
-    return GetCharacterAccount(this.charId);
-  }
-
-  /** Returns all accounts for the active character. Passing `true` will include accounts the character has access to. */
-  getAccounts(getShared?: boolean) {
-    if (!this.charId) return;
-    return GetCharacterAccounts(this.charId, getShared);
-  }
-
-  async hasAccountPermission(accountId: number, action: keyof OxAccountPermissions) {
-    return (
-      this.charId &&
-      (await CanPerformAction(this, accountId, (await GetAccountRole(accountId, this.charId)) || null, action))
-    );
+    return await PayAccountInvoice(invoiceId, this.charId);
   }
 
   setActiveGroup(groupName?: string, temp?: boolean) {
     if (!this.charId || (groupName && !(groupName in this.#groups))) return false;
 
-    SetActiveGroup(this.charId, temp ? undefined : groupName);
+    const currentActiveGroup = this.get('activeGroup');
 
+    if (currentActiveGroup) GlobalState[`${currentActiveGroup}:activeCount`] -= 1;
+
+    if (groupName) GlobalState[`${groupName}:activeCount`] += 1;
+
+    SetActiveGroup(this.charId, temp ? undefined : groupName);
     this.set('activeGroup', groupName, true);
     emit('ox:setActiveGroup', this.source, groupName);
 
@@ -369,12 +336,10 @@ export class OxPlayer extends ClassInterface {
   }
 
   async addLicense(licenseName: string) {
-    if (!this.charId || this.#licenses[licenseName]) return false;
-
-    const issued = Date.now();
+    if (!this.charId || this.#licenses[licenseName] || !Licenses[licenseName]) return false;
 
     const license = {
-      issued,
+      issued: Date.now(),
     };
 
     if (!(await AddCharacterLicense(this.charId, licenseName, license))) return false;
@@ -434,6 +399,8 @@ export class OxPlayer extends ClassInterface {
 
     this.#groups[group.name] = grade;
     GlobalState[`${group.name}:count`] += 1;
+
+    if (group.name === this.get('activeGroup')) GlobalState[`${group.name}:activeCount`] += 1;
   }
 
   /** Removes the active character from the group and sets permissions. */
@@ -445,6 +412,8 @@ export class OxPlayer extends ClassInterface {
 
     delete this.#groups[group.name];
     GlobalState[`${group.name}:count`] -= 1;
+
+    if (group.name === this.get('activeGroup')) GlobalState[`${group.name}:activeCount`] -= 1;
   }
 
   /** Saves the active character to the database. */
@@ -486,6 +455,7 @@ export class OxPlayer extends ClassInterface {
 
     if (dropped) return;
 
+    delete OxPlayer.keys.charId[this.charId];
     delete this.charId;
 
     this.emit('ox:startCharacterSelect', this.userId, await this.#getCharacters());
@@ -563,7 +533,7 @@ export class OxPlayer extends ClassInterface {
 
     if (!metadata) return;
 
-    const statuses = JSON.parse(metadata.statuses as any) || this.#statuses;
+    const statuses = metadata.statuses || this.#statuses;
     const { isDead, gender, dateOfBirth, phoneNumber, health, armour } = metadata;
     const groups = await GetCharacterGroups(this.charId);
     const licenses = await GetCharacterLicenses(this.charId);
@@ -572,8 +542,7 @@ export class OxPlayer extends ClassInterface {
     character.armour = armour;
 
     groups.forEach(({ name, grade }) => this.#addGroup(name, grade));
-
-    licenses.forEach(({ name, data }) => (this.#licenses[name] = JSON.parse(data as string)));
+    licenses.forEach(({ name, data }) => (this.#licenses[name] = data));
 
     for (const name in Statuses) this.setStatus(name, statuses[name]);
 
@@ -587,6 +556,8 @@ export class OxPlayer extends ClassInterface {
     this.set('dateOfBirth', dateOfBirth, true);
     this.set('phoneNumber', phoneNumber, true);
     this.set('activeGroup', groups.find((group) => group.isActive)?.name, true);
+
+    OxPlayer.keys.charId[character.charId] = this;
 
     /**
      * @todo Player metadata can ideally be handled with statebags, but requires security features.

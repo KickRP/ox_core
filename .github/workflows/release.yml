@@ -50,7 +50,7 @@ jobs:
         run: |
           mkdir -p ./temp/ox_core/common
           cp ./{LICENSE,README.md,fxmanifest.lua} ./temp/ox_core
-          cp -r ./{imports,lib,locales,sql,dist} ./temp/ox_core
+          cp -r ./{lib,locales,sql,dist} ./temp/ox_core
           cp -r ./common/data ./temp/ox_core/common/data
           cd ./temp && zip -r ../ox_core.zip ./ox_core
 
@@ -79,7 +79,7 @@ jobs:
         with:
           repo_token: '${{ secrets.GITHUB_TOKEN }}'
           title: '${{ env.RELEASE_VERSION }}'
-          prerelease: true
+          prerelease: false
           files: ox_core.zip
 
         env:

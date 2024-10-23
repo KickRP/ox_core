@@ -1,7 +1,7 @@
 {
   "name": "@overextended/ox_core",
   "author": "Overextended",
-  "version": "0.29.1",
+  "version": "1.0.1",
   "license": "LGPL-3.0-or-later",
   "description": "A modern FiveM framework.",
   "type": "module",
@@ -16,9 +16,9 @@
     "./server": "./package/lib/server/index.js"
   },
   "scripts": {
-    "prepare": "tsc --build && tsc-alias",
-    "build": "node build.js --mode=production",
-    "watch": "node build.js"
+    "build": "node build.js",
+    "watch": "node build.js --watch",
+    "prettier": "prettier ./{client,common,server,lib}/**/*.{ts,ts} --write"
   },
   "keywords": [
     "fivem",
@@ -34,16 +34,17 @@
   "devDependencies": {
     "@citizenfx/client": "latest",
     "@citizenfx/server": "latest",
-    "@types/node": "^20.16.1",
+    "@overextended/fx-utils": "^0.0.4",
+    "@types/node": "^20.16.10",
     "esbuild": "^0.23.1",
     "prettier": "^3.3.3",
     "tsc-alias": "^1.8.10",
-    "typescript": "^5.5.4"
+    "typescript": "^5.6.2"
   },
   "dependencies": {
     "@nativewrappers/fivem": "^0.0.41",
-    "@overextended/ox_lib": "^3.25.0",
-    "mariadb": "^3.3.1"
+    "@overextended/ox_lib": "^3.26.0",
+    "mariadb": "^3.3.2"
   },
   "engines": {
     "node": ">=16.9.1"

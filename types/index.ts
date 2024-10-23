@@ -109,14 +109,17 @@ export interface OxStatus {
   onTick: number;
 }
 
-export interface OxAccount {
+export interface OxAccountMetadata {
   id: number;
   balance: number;
   isDefault: boolean;
-  label?: string;
+  label: string;
+  type: 'personal' | 'shared' | 'group';
   owner?: number;
   group?: string;
-  type: 'personal' | 'shared' | 'group';
+}
+
+export interface OxAccountUserMetadata extends OxAccountMetadata {
   role: OxAccountRole;
   ownerName: string;
 }
@@ -128,11 +131,24 @@ export interface DbGroup {
   accountRoles: Dict<OxAccountRole>;
   type?: string;
   colour?: number;
+  hasAccount: boolean;
 }
 
 export interface OxGroup extends DbGroup {
   grades: string[];
   principal: string;
+}
+
+export interface CreateGroupProperties {
+  name: string;
+  label: string;
+  grades: {
+    label: string;
+    accountRole?: OxAccountRole;
+  }[];
+  type?: string;
+  colour?: number;
+  hasAccount?: boolean;
 }
 
 export interface OxGroupPermissions {
@@ -151,4 +167,31 @@ export interface OxAccountPermissions {
   viewHistory: boolean;
   manageAccount: boolean;
   closeAccount: boolean;
+  sendInvoice: boolean;
+  payInvoice: boolean;
+}
+
+export interface OxAccountInvoice {
+  id: number;
+  actorId?: number;
+  payerId?: number;
+  fromAccount: number;
+  toAccount: number;
+  amount: number;
+  message?: string;
+  sentAt: number;
+  dueDate: number;
+  paidAt?: number;
+}
+
+export interface OxCreateInvoice {
+  /** The charId of the player creating the invoice. */
+  actorId?: number;
+  /** The accountId of the account issuing the invoice. */
+  fromAccount: number;
+  /** The accountId of the account receiving the invoice. */
+  toAccount: number;
+  amount: number;
+  message: string;
+  dueDate: string;
 }
